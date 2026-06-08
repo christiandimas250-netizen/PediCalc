@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>PediCalc - Anestesia Pediátrica</title>
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="PediCalc">
+    <meta name="theme-color" content="#f9fafb" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#111827" media="(prefers-color-scheme: dark)">
+    
+    <link rel="manifest" href="./manifest.json">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'media',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'San Francisco', 'Helvetica Neue', 'sans-serif'],
+                    },
+                    colors: {
+                        medical: {
+                            blue: '#0ea5e9',
+                            dark: '#0284c7',
+                            teal: '#0d9488',
+                            light: '#ccfbf1',
+                            indigo: '#4f46e5'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        :root {
+            --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        body {
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior-y: none;
+        }
+        .pb-safe {
+            padding-bottom: calc(1rem + var(--safe-area-inset-bottom));
+        }
+        .tabular-nums {
+            font-variant-numeric: tabular-nums;
+        }
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.15s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .glass-header {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        @media (prefers-color-scheme: dark) {
+            .glass-header {
+                background: rgba(17, 24, 39, 0.85);
+            }
+        }
+        
+        /* Modal Animations for Algorithms */
+        @keyframes modalEnter {
+            from { opacity: 0; transform: scale(0.95) translateY(10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .modal-animate {
+            animation: modalEnter 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+    </style>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 antialiased h-screen overflow-hidden">
+    
+    <div id="root" class="h-full"></div>
+
+    <script type="text/babel" data-presets="react,typescript">
+        const { useState, useMemo } = React;
+
+        // ============================================================================
+        // 1. MOTOR DE CÁLCULOS MÉDICOS
+        // ============================================================================
+        
+        function calculateBasalFluids(weightKg) {
+            let rate = 0;
+            if (weightKg <= 10) rate = weightKg * 4;
+            else if (weightKg <= 20) rate = 40 + ((weightKg - 10) * 2);
+            else rate = 60 + ((weightKg - 20) * 1);
+            return Math.min(rate, 100);
+        }
+
+        function calculateEstimatedBloodVolume(patient) {
+            let multiplier = 70;
+            switch (patient.category) {
+                case 'neonate': multiplier = 85; break;
+                case 'infant': multiplier = 80; break;
+                case 'preschool': multiplier = 75; break;
+                case 'school': multiplier = 70; break;
+                case 'adolescent': multiplier = 65; break;
+            }
+            return patient.weightKg * multiplier;
+        }
+
+        function calculateUncuffedETTube(patient) {
+            let size = (patient.ageYears < 1) ? (patient.weightKg < 1 ? 2.5 : 3.0) : ((patient.ageYears / 4) + 4);
+            return Math.round(size * 2) / 2;
+        }
+
+        function calculateCuffedETTube(patient) {
+            let size = (patient.ageYears < 1) ? 3.0 : ((patient.ageYears / 4) + 3.5);
+            return Math.round(size * 2) / 2;
+        }
+
+        const getVitalsRanges = (category) => {
+            switch(category) {
+                case 'neonate': return { hr: '110 - 160', sbp: '60 - 80', map: '40 - 50', rr: '30 - 60', hb: '14.0 - 20.0' };
+                case 'infant': return { hr: '100 - 150', sbp: '70 - 95', map: '50 - 65', rr: '25 - 40', hb: '10.0 - 14.0' };
+                case 'preschool': return { hr: '90 - 140', sbp: '80 - 100', map: '55 - 75', rr: '20 - 30', hb: '11.5 - 14.5' };
+                case 'school': return { hr: '80 - 120', sbp: '90 - 110', map: '60 - 80', rr: '15 - 25', hb: '11.5 - 14.5' };
+                case 'adolescent': return { hr: '60 - 100', sbp: '100 - 120', map: '70 - 90', rr: '12 - 20', hb: '12.0 - 16.0' };
+                default: return { hr: '-', sbp: '-', map: '-', rr: '-', hb: '-' };
+            }
+        };
+
+        const calculateCardioversion = (w) => ({ firstMin: w * 0.5, firstMax: w * 1, second: w * 2 });
+        const calculateDefibrillation = (w) => ({ first: w * 2, second: w * 4 });
+        const calculateEpiIV = (w) => ({ doseMg: w * 0.01, volumeMl: w * 0.1 });
+        const calculateEpiET = (w) => ({ doseMg: w * 0.1, volumeMl: w * 0.1 });
+        const calculateAmiodarone = (w) => w * 5;
+        const calculateAtropine = (w) => Math.min(Math.max(w * 0.02, 0.1), 0.5);
+        const calculateFluidBolus = (w) => w * 20;
+        const calculateAdenosine = (w) => ({ first: Math.min(w * 0.1, 6), second: Math.min(w * 0.2, 12) });
+        const calculateLidocaineResuscitation = (w) => w * 1;
+        const calculateMagnesium = (w) => ({ min: Math.min(w * 25, 2000), max: Math.min(w * 50, 2000) });
+
+        const calculateLocals = (w) => ({
+            lido: Math.min(w * 5, 300),
+            lidoEpi: Math.min(w * 7, 500),
+            bupi: Math.min(w * 2.5, 175),
+            bupiEpi: Math.min(w * 3, 225),
+            ropi: Math.min(w * 3, 200),
+            ropiEpi: Math.min(w * 3, 200)
+        });
+
+        const formatNumber = (num, decimals = 1) => Number.isInteger(num) ? num : num.toFixed(decimals);
+
+        // ============================================================================
+        // 2. BASE DE DATOS DE ALGORITMOS (CRISIS)
+        // ============================================================================
+        const crisisDB = {
+            broncoespasmo: {
+                title: "Broncoespasmo", icon: "🫁", color: "#00b4d8",
+                diagnosis: ["Aumento de presión máxima en vía aérea", "Sibilancias a la auscultación", "Capnografía con patrón obstructivo (aleta de tiburón)", "Desaturación y dificultad ventilatoria"],
+                immediate: ["Cambiar a FiO2 100%", "Ventilar manualmente para sentir distensibilidad", "Detener agentes sospechosos (β-bloqueadores, AINEs, relajantes, látex, antibióticos)", "Pedir ayuda"],
+                steps: [
+                    { title: "Manejo Inmediato", content: "<ul class='list-disc pl-5 mt-1 space-y-1'><li>Profundizar anestesia: Volátiles > Ketamina > Propofol.</li><li>Descartar causas mecánicas: IOT selectiva, tubo acodado, secreciones, neumotórax.</li><li>Evitar hiperinsuflación dinámica: Aumentar tiempo espiratorio, FR baja/normal.</li></ul>" },
+                    { title: "Terapia de Primera Línea", content: "Administrar agonistas β2 de acción corta.", drugs: [ { name: "Salbutamol (Inhalador)", dose: "6-8 puffs repetidos" }, { name: "Salbutamol (Nebulizado)", dose: "5 mg repetidos" }, { name: "Salbutamol (IV)", dose: "250 mcg IV lento" } ]},
+                    { title: "Terapia de Segunda Línea", content: "Si no hay respuesta adecuada:", drugs: [ { name: "Bromuro de Ipratropio", dose: "4-8 puffs o 0.5 mg nebulizado" }, { name: "Sulfato de Magnesio", dose: "50 mg/kg IV (máx 2 g)" }, { name: "Metilprednisolona", dose: "125 mg IV" }, { name: "Ketamina", dose: "Bolo 10-20 mg" }, { name: "Epinefrina IV", dose: "10 a 100 mcg titulada." } ]}
+                ],
+                alerts: [{ type: "danger", text: "Si el paciente no puede ser ventilado en absoluto y la saturación cae rápidamente, considere anafilaxia o neumotórax a tensión." }],
+                checklist: ["FiO2 100% y ventilación manual", "Ayuda solicitada", "Se descartó tubo acodado", "Salbutamol administrado", "Anestesia profundizada"]
+            },
+            laringoespasmo: {
+                title: "Laringoespasmo", icon: "🤐", color: "#6a4c93",
+                diagnosis: ["Estridor inspiratorio", "Ausencia de ventilación / incapacidad para ventilar a presión positiva", "Movimientos torácicos paradójicos", "Desaturación progresiva"],
+                immediate: ["Identificar y retirar el estímulo", "Tracción mandibular (Jaw thrust)", "Subluxación temporomandibular", "CPAP suave con FiO2 100%"],
+                steps: [
+                    { title: "1. Desobstrucción y Ventilación", content: "<ul class='list-disc pl-5 mt-1 space-y-1'><li>Aplicar tracción mandibular enérgica.</li><li>Aplicar CPAP al 100% O2.</li><li>Evaluar entrada de aire.</li></ul>" },
+                    { title: "2. Presión Torácica", content: "Si no hay movimiento de aire: <ul class='list-disc pl-5 mt-1'><li>Aplicar presión torácica suave (Maniobra de Larson).</li></ul>" },
+                    { title: "3. Terapia Farmacológica", content: "Si persisten signos de cierre de cuerdas:", drugs: [ { name: "Propofol", dose: "0.5 mg/kg IV" }, { name: "Succinilcolina", dose: "IV: 0.1 - 2 mg/kg. IM: 4 mg/kg" }, { name: "Atropina", dose: "10-20 mcg/kg IV (Si bradicardia)" } ]},
+                    { title: "4. Rescate de Vía Aérea", content: "Si la saturación no aumenta tras relajación: <ul class='list-disc pl-5 mt-1'><li>Intubación orotraqueal inmediata.</li><li>Si es imposible: Cricotiroidotomía.</li></ul>" }
+                ],
+                alerts: [{ type: "danger", text: "La hipoxia profunda causa bradicardia y paro cardíaco rápidamente en pacientes pediátricos." }],
+                checklist: ["Retirar estímulo", "Tracción mandibular + CPAP", "Propofol administrado", "Succinilcolina lista", "Atropina evaluada"]
+            },
+            hipertermia: {
+                title: "Hipertermia Maligna", icon: "🔥", color: "#e63946",
+                diagnosis: ["Aumento súbito/inexplicable de ETCO2", "Taquicardia y arritmias", "Rigidez muscular", "Aumento rápido de temperatura (>38.5°C)"],
+                immediate: ["DETENER agentes desencadenantes", "Pedir ayuda urgente y notificar al cirujano", "Hiperventilar con FiO2 100%", "Solicitar Dantroleno"],
+                steps: [
+                    { title: "1. Detener Gatillos", content: "<ul class='list-disc pl-5 mt-1 space-y-1'><li>Apagar vaporizadores.</li><li>Aumentar flujo de gas fresco (>10 L/min).</li><li>Mantener anestesia con TIVA.</li></ul>" },
+                    { title: "2. Dantroleno", content: "Único antídoto.", drugs: [ { name: "Dantroleno", dose: "2.5 mg/kg IV rápido. Repetir 1 mg/kg si necesario (máx 10 mg/kg)." } ]},
+                    { title: "3. Enfriamiento y Control", content: "<ul class='list-disc pl-5 mt-1 space-y-1'><li>Compresas de hielo, líquidos fríos.</li><li>Metas: ETCO2 < 6 kPa, Temp < 38.5°C.</li></ul>" }
+                ],
+                alerts: [{ type: "danger", text: "NUNCA combine Dantroleno con bloqueadores de canales de calcio (Riesgo de hiperkalemia fatal)." }],
+                checklist: ["Volátiles apagados", "Cirujano notificado", "FiO2 100%", "Dantroleno administrado", "Enfriamiento iniciado"]
+            },
+            last: {
+                title: "Toxicidad Sistémica (LAST)", icon: "💉", color: "#ffb703",
+                diagnosis: ["Pinchazo accidental intravascular de AL", "Signos SNC: Sabor metálico, tinnitus, convulsiones", "Signos CV: Hipotensión inexplicada, arritmias, paro"],
+                immediate: ["DETENER la inyección del AL", "Pedir ayuda y solicitar KIT LAST (Lípidos)", "Manejo de vía aérea (100% O2)", "Controlar convulsiones"],
+                steps: [
+                    { title: "1. Soporte Vital", content: "<ul class='list-disc pl-5 mt-1 space-y-1'><li>Ventilar FiO2 100%. EVITAR hiperventilación.</li><li>Convulsiones: Benzodiacepinas. EVITAR grandes dosis de Propofol.</li></ul>" },
+                    { title: "2. Terapia CV Específica", content: "Diferente al ACLS:", drugs: [ { name: "Epinefrina", dose: "Reducir bolos a ≤ 1 mcg/kg." }, { name: "EVITAR", dose: "Vasopresina, calcio antagonistas, beta bloqueadores." } ]},
+                    { title: "3. Emulsión Lipídica (20%)", content: "Aplicar lo más pronto posible.", drugs: [ { name: "Pacientes < 70 kg", dose: "Bolo: 1.5 mL/kg en 3 min. Infusión: 0.25 mL/kg/min." }, { name: "Dosis Máxima", dose: "12 mL/kg en total." } ]}
+                ],
+                alerts: [{ type: "danger", text: "No exceda 12 mL/kg de emulsión lipídica. No use vasopresina ni adrenalina a dosis altas." }],
+                checklist: ["Inyección detenida", "Kit LAST solicitado", "FiO2 100%", "Emulsión Lipídica en curso", "Evitadas dosis altas de adrenalina"]
+            },
+            transfusion: {
+                title: "Transfusión Masiva Pediátrica", icon: "🩸", color: "#0077b6",
+                diagnosis: [
+                    "Pérdida sanguínea > 40 mL/kg en 3h o > 80 mL/kg en 24h",
+                    "Pérdida aguda > 2-3 mL/kg/minuto",
+                    "Hemorragia crítica con inestabilidad hemodinámica o shock"
+                ],
+                immediate: [
+                    "Prescribir TODO en mL/kg (obligatorio en < 50 kg)",
+                    "Avisar al Banco de Sangre: 'Activar PTM Pediátrico'",
+                    "Reanimación empírica inicial (Proporción 2:1:1 a 1:1:1)",
+                    "Prevenir Triada Letal (Hipotermia, Acidosis, Hipocalcemia)"
+                ],
+                steps: [
+                    { title: "1. Alícuotas de Reanimación", content: "Administrar estrictamente en mL/kg, nunca en unidades adultas.", drugs: [
+                        { name: "Glóbulos Rojos (GR)", dose: "20 mL/kg (Máx 4 U adulto)" },
+                        { name: "Plasma Fresco Congelado (PFC)", dose: "15-20 mL/kg (Proporción mínima 1 PFC : 2 GR)" },
+                        { name: "Plaquetas", dose: "15-20 mL/kg (Considerar tras cada 40 mL/kg de GR)" },
+                        { name: "Crioprecipitados", dose: "10 mL/kg" }
+                    ]},
+                    { title: "2. Metas Guiadas por Laboratorio", content: "Dirigir terapia según Labs o ROTEM cada 30-60 min:", drugs: [
+                        { name: "Hb < 7 g/dL (Estables)", dose: "Transfundir GR (Meta MBL > 8.0 g/dL)" },
+                        { name: "Plaquetas < 75,000", dose: "Transfundir Plaquetas" },
+                        { name: "Fibrinógeno < 1.5 g/L", dose: "Crioprecipitados (10 mL/kg)" },
+                        { name: "PT/INR > 1.5x", dose: "Plasma Fresco Congelado (10-15 mL/kg)" }
+                    ]},
+                    { title: "3. Terapia Adyuvante", content: "Considerar tempranamente:", drugs: [
+                        { name: "Ácido Tranexámico (TXA)", dose: "Dosis inicial 15-20 mg/kg en trauma/sangrado masivo" },
+                        { name: "Gluconato/Cloruro de Calcio", dose: "Reemplazar agresivamente guiado por calcio iónico" }
+                    ]}
+                ],
+                alerts: [
+                    { type: "danger", text: "NUNCA prescriba en 'unidades' para niños < 50 kg; riesgo letal de sobrecarga de volumen. Las relaciones empíricas pediátricas recomendadas son 2:1:1 o 1:1:1 (GR:PFC:Plt)." }
+                ],
+                checklist: [
+                    "Banco de sangre activado (PTM)",
+                    "Reanimación en mL/kg iniciada",
+                    "Calentador de fluidos encendido",
+                    "Calcio iónico monitorizado",
+                    "Ácido Tranexámico (TXA) considerado"
+                ]
+            },
+            anafilaxia: {
+                title: "Anafilaxia", icon: "🐝", color: "#fca311",
+                diagnosis: ["Hipotensión inexplicada severa", "Taquicardia o bradicardia", "Broncoespasmo", "Enrojecimiento/urticaria (a menudo ausentes en quirófano)"],
+                immediate: ["PEDIR AYUDA y detener/remover cirugía", "Remover gatillos sospechosos (Relajantes, Látex, ATBs)", "FiO2 100%", "Elevar piernas (Trendelenburg)"],
+                steps: [
+                    { title: "1. Vía Aérea y Circulación", content: "<ul class='list-disc pl-5 mt-1 space-y-1'><li>Asegurar vía aérea.</li><li>Hipotensión masiva por vasodilatación requiere soporte agresivo.</li></ul>" },
+                    { title: "2. Adrenalina y Fluidos", content: "Tratamiento simultáneo:", drugs: [ { name: "Adrenalina IV", dose: "Niños: 1 mcg/kg." }, { name: "Fluidos IV Rápidos", dose: "Cristaloides 20 mL/kg. Evitar coloides." }, { name: "Adrenalina IM", dose: "10 mcg/kg IM (máx 500 mcg)." } ]},
+                    { title: "3. Manejo Refractario", content: "Si pobre respuesta a bolos:", drugs: [ { name: "Infusión Adrenalina", dose: "0.5 a 1.0 mL/kg/hora de concentración 1:100,000." }, { name: "Vasopresor secundario", dose: "Norepinefrina o Vasopresina." } ]}
+                ],
+                alerts: [{ type: "danger", text: "Si la presión sistólica cae drásticamente o hay paro, inicie RCP." }],
+                checklist: ["Gatillos detenidos", "Ayuda solicitada", "Adrenalina IV bolo administrada", "Carga rápida de líquidos", "RCP considerada si colapso"]
+            }
+        };
+
+        // ============================================================================
+        // 3. COMPONENTES PRINCIPALES
+        // ============================================================================
+
+        const Header = ({ patient, updatePatient, cycleAgeUnit }) => {
+            const { weightKg, heightCm, ageValue, ageUnit, sex } = patient;
+            const bsa = useMemo(() => Math.sqrt((weightKg * heightCm) / 3600).toFixed(2), [weightKg, heightCm]);
+            const imc = useMemo(() => (weightKg / Math.pow(heightCm / 100, 2)).toFixed(1), [weightKg, heightCm]);
+            const handleFocus = (e) => e.target.select();
+            const ageUnitLabel = ageUnit === 'Y' ? 'Años' : ageUnit === 'M' ? 'Meses' : 'Días';
+
+            return (
+                <header className="fixed top-0 w-full z-50 glass-header border-b border-gray-200 dark:border-gray-800 shadow-sm px-4 py-3 pt-safe">
+                    <div className="flex items-center space-x-2 mb-3 px-1">
+                        <svg className="w-6 h-6 text-medical-teal" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                            <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+                            <path d="M8 12h2.5l1.5 3.5 2-7.5 1.5 4H16"></path>
+                        </svg>
+                        <h1 className="text-[17px] font-black tracking-tight text-gray-900 dark:text-white">PediCalc</h1>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-2 mb-3">
+                        <div className="flex flex-col bg-gray-100 dark:bg-gray-800 rounded-xl p-1.5 items-center justify-center">
+                            <button onClick={cycleAgeUnit} className="flex items-center justify-center space-x-0.5 text-[9px] uppercase font-bold text-medical-teal dark:text-teal-400 tracking-wider hover:bg-gray-200 dark:hover:bg-gray-700 px-1 rounded transition-colors active:scale-95">
+                                <span>{ageUnitLabel}</span>
+                                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path></svg>
+                            </button>
+                            <input type="number" onFocus={handleFocus} className="bg-transparent w-full text-center text-xl font-bold tabular-nums outline-none text-gray-900 dark:text-white mt-0.5" value={ageValue} onChange={(e) => updatePatient('ageValue', Number(e.target.value))} />
+                        </div>
+                        <div className="flex flex-col bg-sky-50 dark:bg-sky-900/30 rounded-xl p-1.5 items-center justify-center border border-sky-100 dark:border-sky-800/50">
+                            <span className="text-[9px] uppercase font-bold text-medical-blue tracking-wider">Peso (kg)</span>
+                            <input type="number" onFocus={handleFocus} className="bg-transparent w-full text-center text-xl font-bold text-medical-dark dark:text-sky-300 tabular-nums outline-none mt-0.5" value={weightKg} onChange={(e) => updatePatient('weightKg', Number(e.target.value))} />
+                        </div>
+                        <div className="flex flex-col bg-gray-100 dark:bg-gray-800 rounded-xl p-1.5 items-center justify-center">
+                            <span className="text-[9px] uppercase font-bold text-gray-500 tracking-wider">Talla (cm)</span>
+                            <input type="number" onFocus={handleFocus} className="bg-transparent w-full text-center text-xl font-bold tabular-nums outline-none text-gray-900 dark:text-white mt-0.5" value={heightCm} onChange={(e) => updatePatient('heightCm', Number(e.target.value))} />
+                        </div>
+                        <button onClick={() => updatePatient('sex', sex === 'M' ? 'F' : 'M')} className="flex flex-col bg-gray-100 dark:bg-gray-800 rounded-xl p-1.5 items-center justify-center active:bg-gray-200 dark:active:bg-gray-700 transition-colors">
+                            <span className="text-[9px] uppercase font-bold text-gray-500 tracking-wider">Sexo</span>
+                            <span className="text-xl font-bold text-gray-900 dark:text-white mt-0.5">{sex}</span>
+                        </button>
+                    </div>
+
+                    <div className="flex space-x-2">
+                        <div className="flex-1 bg-teal-50 dark:bg-teal-900/20 text-teal-800 dark:text-teal-300 rounded-lg px-3 py-1.5 flex justify-between items-center border border-teal-100 dark:border-teal-900/30">
+                            <span className="text-xs font-semibold">Sup. Corp.</span>
+                            <span className="font-bold tabular-nums">{bsa} m²</span>
+                        </div>
+                        <div className="flex-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg px-3 py-1.5 flex justify-between items-center border border-gray-200 dark:border-gray-700">
+                            <span className="text-xs font-semibold">IMC</span>
+                            <span className="font-bold tabular-nums">{imc}</span>
+                        </div>
+                    </div>
+                </header>
+            );
+        };
+
+        const BottomNav = ({ activeTab, setActiveTab }) => {
+            const tabs = [
+                { id: 'vitals', label: 'Vitales', icon: 'M16 6l-2.5 7.5L10 1.5 6 13H2v2h5l3-8.5 3.5 11.5L17 8h5V6z' },
+                { id: 'equipment', label: 'Equipo', icon: 'M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z' },
+                { id: 'resus', label: 'RCP', icon: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z', isEmergency: true },
+                { id: 'locals', label: 'Locales', icon: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z' },
+                { id: 'algorithms', label: 'Crisis', icon: 'M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z', isAlgo: true },
+                { id: 'info', label: 'Info', icon: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z' }
+            ];
+
+            return (
+                <nav className="fixed bottom-0 w-full bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 pb-safe z-50">
+                    <div className="flex justify-between items-center h-[60px] px-1">
+                        {tabs.map((tab) => {
+                            const isActive = activeTab === tab.id;
+                            let colorClass = isActive ? 'text-medical-teal dark:text-teal-400' : 'text-gray-400 hover:text-gray-500';
+                            
+                            if (tab.isEmergency) colorClass = isActive ? 'text-red-600 dark:text-red-500' : 'text-red-300 dark:text-red-900/50 hover:text-red-400';
+                            if (tab.isAlgo) colorClass = isActive ? 'text-purple-600 dark:text-purple-400' : 'text-purple-300 dark:text-purple-900/50 hover:text-purple-400';
+
+                            return (
+                                <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-col items-center justify-center w-full h-full transition-colors ${colorClass}`}>
+                                    <svg className="w-[22px] h-[22px] mb-1 fill-current" viewBox="0 0 24 24"><path d={tab.icon} /></svg>
+                                    <span className="text-[8.5px] font-bold tracking-tight uppercase whitespace-nowrap">{tab.label}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </nav>
+            );
+        };
+
+        // --- Vistas Clínicas ---
+
+        const VitalsView = ({ patient }) => {
+            const w = patient.weightKg;
+            const ranges = getVitalsRanges(patient.category);
+            const tidalMin = formatNumber(w * 6, 0);
+            const tidalMax = formatNumber(w * 8, 0);
+            const bloodVol = formatNumber(calculateEstimatedBloodVolume(patient), 0);
+            const basalFluids = formatNumber(calculateBasalFluids(w), 1);
+            let bmr = w <= 10 ? w * 100 : w <= 20 ? 1000 + (w - 10) * 50 : 1500 + (w - 20) * 20;
+            const catLabels = { neonate: 'Neonato (< 1m)', infant: 'Lactante (1-12m)', preschool: 'Preescolar (1-5a)', school: 'Escolar (6-12a)', adolescent: 'Adolescente (> 12a)' };
+
+            const Row = ({ label, value, unit }) => (
+                <div className="p-3.5 flex justify-between items-center">
+                    <p className="font-medium text-[15px] text-gray-800 dark:text-gray-200">{label}</p>
+                    <p className="font-bold text-[17px] tabular-nums text-right">{value} <span className="text-[11px] font-normal text-gray-500">{unit}</span></p>
+                </div>
+            );
+
+            return (
+                <div className="space-y-4 animate-fade-in pt-48 pb-24 px-4">
+                    <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-medical-teal/30 dark:border-teal-900/50 overflow-hidden">
+                        <div className="bg-teal-50/50 dark:bg-teal-900/20 px-4 py-2.5 border-b border-teal-100 dark:border-teal-900/30 flex justify-between items-center">
+                            <h2 className="text-xs font-bold text-teal-800 dark:text-teal-400 uppercase tracking-wider">Parámetros Normales</h2>
+                            <span className="text-[10px] font-bold bg-teal-100 dark:bg-teal-800 text-teal-800 dark:text-teal-200 px-2 py-0.5 rounded-full">{catLabels[patient.category]}</span>
+                        </div>
+                        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                            <Row label="Frecuencia Cardiaca" value={ranges.hr} unit="lpm" />
+                            <Row label="Presión Sistólica" value={ranges.sbp} unit="mmHg" />
+                            <Row label="Presión Media (PAM)" value={ranges.map} unit="mmHg" />
+                            <Row label="Frecuencia Respiratoria" value={ranges.rr} unit="rpm" />
+                            <Row label="Hemoglobina Normal" value={ranges.hb} unit="g/dL" />
+                        </div>
+                    </section>
+                    <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-medical-blue/30 dark:border-sky-900/50 overflow-hidden">
+                        <div className="bg-sky-50/50 dark:bg-sky-900/20 px-4 py-2.5 border-b border-sky-100 dark:border-sky-900/30">
+                            <h2 className="text-xs font-bold text-medical-dark dark:text-sky-400 uppercase tracking-wider">Cálculos Fisiológicos</h2>
+                        </div>
+                        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                            <Row label="Volumen Tidal (6-8 mL/kg)" value={`${tidalMin} - ${tidalMax}`} unit="mL" />
+                            <Row label="Volumen Sanguíneo" value={bloodVol} unit="mL" />
+                            <Row label="Fluidos Basales" value={basalFluids} unit="mL/h" />
+                            <Row label="Metabolismo Basal" value={formatNumber(bmr)} unit="kcal/día" />
+                        </div>
+                    </section>
+                </div>
+            );
+        };
+
+        const EquipmentView = ({ patient }) => {
+            const w = patient.weightKg;
+            const c = patient.category;
+            
+            const uncuffedNum = calculateUncuffedETTube(patient);
+            const uncuffed = formatNumber(uncuffedNum);
+            
+            // Lógica ajustada para dejar en blanco (sin globo) si es menor a 1 año
+            const cuffed = patient.ageYears < 1 ? '-' : formatNumber(calculateCuffedETTube(patient));
+            
+            const oralDepth = c === 'neonate' ? (w + 6).toFixed(1) : (uncuffedNum * 3).toFixed(1);
+            const nasalDepth = c === 'neonate' ? (uncuffedNum * 3 + 1).toFixed(1) : (uncuffedNum * 4).toFixed(1);
+            const estilete = uncuffedNum < 4 ? 'C (6 Fr)' : uncuffedNum < 6 ? 'M (10 Fr)' : 'G (14 Fr)';
+            const lma = w < 5 ? '1' : w < 10 ? '1.5' : w < 20 ? '2' : w < 30 ? '2.5' : w < 50 ? '3' : w < 70 ? '4' : '5';
+            const igel = w < 5 ? '1' : w < 12 ? '1.5' : w < 25 ? '2' : w < 35 ? '2.5' : w < 60 ? '3' : '4';
+            let guedel = '';
+            if (w < 4) guedel = '000 - 00 (40-50 mm)'; else if (w < 10) guedel = '0 (60 mm)'; else if (w < 15) guedel = '1 (70 mm)'; else if (w < 25) guedel = '2 (80 mm)'; else guedel = '3 - 4 (90-100 mm)';
+            const miller = w < 2 ? '00' : w < 4 ? '0' : w < 10 ? '1' : w < 30 ? '2' : '3';
+            const mac = w < 10 ? 'Usar Miller' : w < 15 ? '1 - 2' : w < 30 ? '2' : '3';
+            const mask = w < 3 ? '0' : w < 10 ? '1' : w < 15 ? '2' : w < 30 ? '3' : '4 - 5';
+            const bag = w < 10 ? '0.5' : w < 30 ? '1.0' : '2.0';
+            const circuit = w < 20 ? 'Pediátrico (15 mm)' : 'Adulto (22 mm)';
+            const iv = w < 4 ? '24G' : w < 10 ? '24G - 22G' : w < 20 ? '22G' : w < 30 ? '22G - 20G' : '20G - 18G';
+            const cvc = w < 5 ? '3 - 4' : w < 15 ? '4' : w < 30 ? '5' : '7';
+            const io = w < 40 ? '15 mm (Rosa)' : '25 mm (Azul)';
+            let succionRaw = Math.floor(uncuffedNum * 2);
+            if (succionRaw % 2 !== 0) succionRaw -= 1;
+            const succion = succionRaw;
+            const foley = w < 3 ? '5' : w < 10 ? '6 - 8' : w < 20 ? '8 - 10' : w < 40 ? '10 - 12' : '12 - 14';
+            const gastrica = w < 4 ? '5 - 8' : w < 10 ? '8 - 10' : w < 20 ? '10 - 12' : '14 - 18';
+            const toracico = w < 4 ? '10 - 12' : w < 10 ? '12 - 16' : w < 20 ? '16 - 20' : w < 30 ? '20 - 28' : '28 - 32';
+            const ta = w < 4 ? 'Neonato 1-4' : w < 10 ? 'Lactante' : w < 18 ? 'Pediátrico' : w < 30 ? 'Adulto Pequeño' : 'Adulto';
+
+            const EquipmentRow = ({ label, value, unit }) => (
+                <div className="p-3.5 flex justify-between items-center">
+                    <p className="font-medium text-[14.5px] text-gray-800 dark:text-gray-200">{label}</p>
+                    <p className="font-bold text-[16px] text-medical-dark dark:text-sky-300 text-right tabular-nums ml-2 leading-tight">
+                        {value} <span className="text-[11px] font-normal text-gray-500">{unit}</span>
+                    </p>
+                </div>
+            );
+
+            const Section = ({ title, children }) => (
+                <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                    <div className="bg-gray-50 dark:bg-gray-900/50 px-4 py-2.5 border-b border-gray-100 dark:border-gray-700">
+                        <h2 className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{title}</h2>
+                    </div>
+                    <div className="divide-y divide-gray-100 dark:divide-gray-700">{children}</div>
+                </section>
+            );
+
+            return (
+                <div className="space-y-5 animate-fade-in pt-48 pb-24 px-4">
+                    <Section title="Vía Aérea Endotraqueal">
+                        <EquipmentRow label="TET sin globo (DI)" value={uncuffed} unit="mm" />
+                        <EquipmentRow label="TET con globo (DI)" value={cuffed} unit={cuffed === '-' ? '' : 'mm'} />
+                        <EquipmentRow label="Inserción Oral" value={oralDepth} unit="cm" />
+                        <EquipmentRow label="Inserción Nasal" value={nasalDepth} unit="cm" />
+                        <EquipmentRow label="Estilete TET" value={estilete} unit="" />
+                    </Section>
+                    <Section title="Laringoscopía y Supraglóticos">
+                        <EquipmentRow label="Mascarilla Laríngea" value={lma} unit="No." />
+                        <EquipmentRow label="Dispositivo I-GEL" value={igel} unit="No." />
+                        <EquipmentRow label="Cánula de Guedel" value={guedel} unit="" />
+                        <EquipmentRow label="Hoja Miller" value={miller} unit="No." />
+                        <EquipmentRow label="Hoja Macintosh" value={mac} unit="No." />
+                    </Section>
+                    <Section title="Ventilación">
+                        <EquipmentRow label="Mascarilla Facial" value={mask} unit="No." />
+                        <EquipmentRow label="Bolsa de Ventilador" value={bag} unit="L" />
+                        <EquipmentRow label="Circuito Anestésico" value={circuit} unit="" />
+                    </Section>
+                    <Section title="Accesos Vasculares">
+                        <EquipmentRow label="Catéter IV Periférico" value={iv} unit="" />
+                        <EquipmentRow label="Catéter Venoso Central" value={cvc} unit="Fr" />
+                        <EquipmentRow label="Aguja Intraósea" value={io} unit="" />
+                    </Section>
+                    <Section title="Sondas y Monitoreo">
+                        <EquipmentRow label="Catéter de Succión" value={succion} unit="Fr" />
+                        <EquipmentRow label="Sonda Urinaria (Foley)" value={foley} unit="Fr" />
+                        <EquipmentRow label="Sonda Gástrica" value={gastrica} unit="Fr" />
+                        <EquipmentRow label="Tubo Torácico" value={toracico} unit="Fr" />
+                        <EquipmentRow label="Brazalete TA" value={ta} unit="" />
+                    </Section>
+                </div>
+            );
+        };
+
+        const ResusView = ({ patient }) => {
+            const w = patient.weightKg;
+            const cv = calculateCardioversion(w);
+            const df = calculateDefibrillation(w);
+            const epiIV = calculateEpiIV(w);
+            const epiET = calculateEpiET(w);
+            const amio = calculateAmiodarone(w);
+            const atro = calculateAtropine(w);
+            const adeno = calculateAdenosine(w);
+            const lido = calculateLidocaineResuscitation(w);
+            const mag = calculateMagnesium(w);
+            const fluids = calculateFluidBolus(w);
+
+            const ResusRow = ({ label, sub, value, unit, highlight = false }) => (
+                <div className={`p-3.5 flex justify-between items-center ${highlight ? 'bg-red-50/40 dark:bg-red-900/20' : ''}`}>
+                    <div>
+                        <p className="font-semibold text-[14.5px] text-gray-900 dark:text-gray-100">{label}</p>
+                        {sub && <p className="text-[11px] text-gray-500 font-medium mt-0.5">{sub}</p>}
+                    </div>
+                    <div className="text-right ml-3">
+                        <p className={`font-black text-[17px] tabular-nums leading-tight ${highlight ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+                            {value} <span className="text-[11px] font-bold text-gray-500">{unit}</span>
+                        </p>
+                    </div>
+                </div>
+            );
+
+            const Section = ({ title, children }) => (
+                <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-red-200 dark:border-red-900/50 overflow-hidden">
+                    <div className="bg-red-50 dark:bg-red-900/30 px-4 py-2.5 border-b border-red-100 dark:border-red-900/50">
+                        <h2 className="text-[11px] font-bold text-red-700 dark:text-red-400 uppercase tracking-wider">{title}</h2>
+                    </div>
+                    <div className="divide-y divide-red-50 dark:divide-red-900/20">{children}</div>
+                </section>
+            );
+
+            return (
+                <div className="space-y-5 animate-fade-in pt-48 pb-24 px-4">
+                    <Section title="RCP y Soporte Vital">
+                        <ResusRow label="Compresiones Torácicas" sub="Rango recomendado" value="100 - 120" unit="/ min" />
+                        <ResusRow label="Ritmo de Ventilación" sub="Con 2 reanimadores" value="15 : 2" unit="C/V" />
+                    </Section>
+                    <Section title="Terapia Eléctrica">
+                        <ResusRow label="Cardioversión Sincronizada" sub="1ra Dosis (0.5 - 1 J/kg)" value={`${formatNumber(cv.firstMin)} - ${formatNumber(cv.firstMax)}`} unit="J" highlight={true} />
+                        <ResusRow label="Cardioversión Sincronizada" sub="2da Dosis (2 J/kg)" value={formatNumber(cv.second)} unit="J" highlight={true} />
+                        <ResusRow label="Desfibrilación" sub="1ra Dosis (2 J/kg)" value={formatNumber(df.first)} unit="J" highlight={true} />
+                        <ResusRow label="Desfibrilación" sub="2da Dosis (4 J/kg)" value={formatNumber(df.second)} unit="J" highlight={true} />
+                    </Section>
+                    <Section title="Farmacología de Paro">
+                        <ResusRow label="Epinefrina IV / IO" sub={`1:10,000 (0.01 mg/kg) - Vol: ${formatNumber(epiIV.volumeMl, 2)} mL`} value={formatNumber(epiIV.doseMg, 2)} unit="mg" highlight={true} />
+                        <ResusRow label="Epinefrina Endotraqueal" sub={`1:1,000 (0.1 mg/kg) - Vol: ${formatNumber(epiET.volumeMl, 2)} mL`} value={formatNumber(epiET.doseMg, 2)} unit="mg" />
+                        <ResusRow label="Amiodarona" sub="Bolo rápido (5 mg/kg)" value={formatNumber(amio)} unit="mg" />
+                        <ResusRow label="Atropina" sub="0.02 mg/kg (Mín 0.1, Máx 0.5 mg)" value={formatNumber(atro, 2)} unit="mg" />
+                        <ResusRow label="Adenosina (1ra Dosis)" sub="0.1 mg/kg (Máx 6 mg)" value={formatNumber(adeno.first, 1)} unit="mg" />
+                        <ResusRow label="Adenosina (2da Dosis)" sub="0.2 mg/kg (Máx 12 mg)" value={formatNumber(adeno.second, 1)} unit="mg" />
+                        <ResusRow label="Lidocaína IV / IO" sub="Bolo (1 mg/kg)" value={formatNumber(lido)} unit="mg" />
+                        <ResusRow label="Sulfato de Magnesio" sub="25 - 50 mg/kg (Máx 2 g)" value={`${formatNumber(mag.min)} - ${formatNumber(mag.max)}`} unit="mg" />
+                        <ResusRow label="Bolo de Líquidos IV" sub="Cristaloides (20 mL/kg)" value={formatNumber(fluids)} unit="mL" />
+                    </Section>
+                </div>
+            );
+        };
+
+        const LocalsView = ({ patient }) => {
+            const w = patient.weightKg;
+            const al = calculateLocals(w);
+
+            const Row = ({ label, sub, value, unit }) => (
+                <div className="p-3.5 flex justify-between items-center">
+                    <div>
+                        <p className="font-semibold text-[14.5px] text-gray-900 dark:text-gray-100">{label}</p>
+                        <p className="text-[11px] text-gray-500 font-medium mt-0.5">{sub}</p>
+                    </div>
+                    <div className="text-right ml-3">
+                        <p className="font-black text-[17px] tabular-nums leading-tight text-medical-indigo dark:text-indigo-400">
+                            {value} <span className="text-[11px] font-bold text-gray-500">{unit}</span>
+                        </p>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="space-y-4 animate-fade-in pt-48 pb-24 px-4">
+                    <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-900/40 overflow-hidden">
+                        <div className="bg-indigo-50/50 dark:bg-indigo-900/20 px-4 py-2.5 border-b border-indigo-100 dark:border-indigo-900/40">
+                            <h2 className="text-[11px] font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider">Dosis Tóxicas y Topes Máximos</h2>
+                        </div>
+                        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                            <Row label="Lidocaína" sub="5 mg/kg (Máx 300 mg)" value={formatNumber(al.lido)} unit="mg" />
+                            <Row label="Lidocaína con Epinefrina" sub="7 mg/kg (Máx 500 mg)" value={formatNumber(al.lidoEpi)} unit="mg" />
+                            <Row label="Bupivacaína" sub="2.5 mg/kg (Máx 175 mg)" value={formatNumber(al.bupi)} unit="mg" />
+                            <Row label="Bupivacaína con Epinefrina" sub="3 mg/kg (Máx 225 mg)" value={formatNumber(al.bupiEpi)} unit="mg" />
+                            <Row label="Ropivacaína" sub="3 mg/kg (Máx 200 mg)" value={formatNumber(al.ropi)} unit="mg" />
+                            <Row label="Ropivacaína con Epinefrina" sub="3 mg/kg (Máx 200 mg)" value={formatNumber(al.ropiEpi)} unit="mg" />
+                        </div>
+                    </section>
+                </div>
+            );
+        };
+
+        const AlgorithmsView = () => {
+            const [selectedKey, setSelectedKey] = useState(null);
+            const [showModal, setShowModal] = useState(false);
+
+            if (selectedKey) {
+                const protocol = crisisDB[selectedKey];
+                return (
+                    <div className="animate-fade-in pt-48 pb-24 px-4">
+                        <div className="mb-4">
+                            <button onClick={() => setSelectedKey(null)} className="flex items-center text-sm font-bold text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 px-3 py-1.5 rounded-full shadow-sm border border-gray-200 dark:border-gray-700 active:scale-95 transition-transform">
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg>
+                                Volver a Algoritmos
+                            </button>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2 mb-4">
+                            <span className="text-3xl" style={{ textShadow: `0 2px 10px ${protocol.color}40` }}>{protocol.icon}</span>
+                            <h2 className="text-2xl font-black text-gray-900 dark:text-white" style={{ color: protocol.color }}>{protocol.title}</h2>
+                        </div>
+
+                        <div className="bg-white dark:bg-gray-800 border-l-4 rounded-r-xl shadow-sm p-4 mb-4" style={{ borderColor: protocol.color }}>
+                            <h3 className="font-bold text-gray-800 dark:text-gray-200 mb-2 text-sm uppercase tracking-wider">Diagnóstico Rápido</h3>
+                            <ul className="list-disc pl-5 space-y-1 text-[14.5px] text-gray-700 dark:text-gray-300">
+                                {protocol.diagnosis.map((d, i) => <li key={i}>{d}</li>)}
+                            </ul>
+                        </div>
+
+                        {protocol.alerts && protocol.alerts.map((alert, i) => (
+                            <div key={i} className={`p-4 rounded-xl shadow-sm mb-4 flex items-start space-x-3 ${alert.type === 'danger' ? 'bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800' : 'bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800'}`}>
+                                <span className="text-xl leading-none mt-0.5">{alert.type === 'danger' ? '💀' : '⚠️'}</span>
+                                <p className={`text-[14px] font-semibold ${alert.type === 'danger' ? 'text-red-800 dark:text-red-300' : 'text-yellow-800 dark:text-yellow-300'}`}>{alert.text}</p>
+                            </div>
+                        ))}
+
+                        <div className="space-y-4">
+                            <h3 className="font-bold text-gray-800 dark:text-gray-200 text-sm uppercase tracking-wider border-b-2 pb-1" style={{ borderColor: protocol.color }}>Protocolo de Acción</h3>
+                            {protocol.steps.map((step, index) => (
+                                <div key={index} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                                    <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center bg-gray-50/50 dark:bg-gray-900/50">
+                                        <span className="w-6 h-6 flex items-center justify-center rounded-full text-white font-bold text-xs mr-3" style={{ backgroundColor: protocol.color }}>{index + 1}</span>
+                                        <h4 className="font-bold text-[15px] text-gray-900 dark:text-white">{step.title}</h4>
+                                    </div>
+                                    <div className="p-4">
+                                        <div className="text-[14.5px] text-gray-700 dark:text-gray-300 mb-3" dangerouslySetInnerHTML={{ __html: step.content }} />
+                                        {step.drugs && (
+                                            <div className="grid grid-cols-1 gap-2">
+                                                {step.drugs.map((drug, dIdx) => (
+                                                    <div key={dIdx} className="bg-gray-50 dark:bg-gray-900 rounded-lg p-2.5 border-l-4" style={{ borderColor: protocol.color }}>
+                                                        <p className="font-bold text-[14.5px] text-gray-900 dark:text-white">{drug.name}</p>
+                                                        <p className="text-[13.5px] font-semibold text-red-600 dark:text-red-400 mt-0.5">{drug.dose}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="mt-6 mb-20">
+                            <h3 className="font-bold text-gray-800 dark:text-gray-200 text-sm uppercase tracking-wider border-b-2 pb-1 mb-3" style={{ borderColor: protocol.color }}>Checklist Rápido</h3>
+                            <div className="space-y-2">
+                                {protocol.checklist.map((check, i) => (
+                                    <label key={i} className="flex items-start bg-white dark:bg-gray-800 p-3 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 cursor-pointer">
+                                        <input type="checkbox" className="mt-0.5 mr-3 w-5 h-5 accent-teal-500 rounded border-gray-300" />
+                                        <span className="text-[14.5px] font-medium text-gray-800 dark:text-gray-200">{check}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Floating Action Button */}
+                        <div className="fixed bottom-[75px] left-4 right-4 z-40">
+                            <button onClick={() => setShowModal(true)} className="w-full bg-red-600 text-white font-black text-[16px] uppercase tracking-wide py-3.5 rounded-full shadow-lg border-2 border-red-500 active:scale-95 transition-transform flex items-center justify-center space-x-2">
+                                <span className="text-xl">🚨</span>
+                                <span>Acción Inmediata</span>
+                            </button>
+                        </div>
+
+                        {/* Modal Inmediato */}
+                        {showModal && (
+                            <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
+                                <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl border-t-8 border-red-600 shadow-2xl modal-animate p-5 relative">
+                                    <h2 className="text-xl font-black text-red-600 dark:text-red-500 uppercase flex items-center border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
+                                        <span className="mr-2">⏳</span> Primeros 60 Segundos
+                                    </h2>
+                                    <ul className="space-y-3 mb-6">
+                                        {protocol.immediate.map((item, i) => (
+                                            <li key={i} className="flex items-start text-[15px] font-bold text-gray-800 dark:text-gray-200">
+                                                <span className="text-red-500 mr-2">⚡</span>
+                                                <span>{item}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                    <button onClick={() => setShowModal(false)} className="w-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-bold py-3 rounded-xl transition-colors active:scale-95">
+                                        Cerrar y Continuar
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
+            return (
+                <div className="animate-fade-in pt-48 pb-24 px-4">
+                    <div className="mb-4">
+                        <h2 className="text-sm font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1">Algoritmos Clínicos</h2>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Seleccione una crisis para abrir el protocolo.</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        {Object.keys(crisisDB).map(key => {
+                            const item = crisisDB[key];
+                            return (
+                                <div key={key} onClick={() => setSelectedKey(key)} className="bg-white dark:bg-gray-800 rounded-2xl p-4 flex flex-col items-center justify-center shadow-sm border-b-[5px] cursor-pointer active:scale-95 transition-transform text-center" style={{ borderBottomColor: item.color }}>
+                                    <span className="text-4xl mb-2" style={{ textShadow: `0 4px 10px ${item.color}30` }}>{item.icon}</span>
+                                    <span className="text-[13px] font-bold text-gray-800 dark:text-gray-200 leading-tight">{item.title}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        const InfoView = () => {
+            const LinkRow = ({ title, url, icon }) => (
+                <a href={url} target="_blank" rel="noopener noreferrer" className="p-3.5 flex items-center hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                    <span className="text-xl mr-3">{icon}</span>
+                    <span className="font-medium text-[14.5px] text-gray-800 dark:text-gray-200 flex-1">{title}</span>
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                </a>
+            );
+
+            const FormulaRow = ({ title, content }) => (
+                <div className="p-3.5">
+                    <p className="font-semibold text-[14px] text-gray-900 dark:text-gray-100 mb-1">{title}</p>
+                    <div className="text-[13px] text-gray-600 dark:text-gray-400 leading-relaxed" dangerouslySetInnerHTML={{ __html: content }} />
+                </div>
+            );
+
+            return (
+                <div className="space-y-4 animate-fade-in pt-48 pb-24 px-4">
+                    <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <div className="bg-gray-50 dark:bg-gray-900/50 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
+                            <h2 className="text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Guías y Referencias</h2>
+                        </div>
+                        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                            <LinkRow title="Holliday Segar (Fluidos)" url="https://www.ncbi.nlm.nih.gov/books/NBK532305/" icon="💧" />
+                            <LinkRow title="Fórmulas Vía Aérea Pediátrica" url="https://pmc.ncbi.nlm.nih.gov/articles/PMC9663958/" icon="🫁" />
+                            <LinkRow title="Guías PALS (AHA)" url="https://www.ahajournals.org/doi/10.1161/CIR.0000000000001368?url_ver=Z39.88-2003&rfr_id=ori:rid:crossref.org&rfr_dat=cr_pub%20%200pubmed" icon="⚡" />
+                            <LinkRow title="Eventos Críticos (Checklists)" url="https://pedsanesthesia.org/wp-content/uploads/2020/12/SPAPediCrisisChecklistsMASTER_7July2020-002.pdf" icon="🚨" />
+                            <LinkRow title="Guía de Ayuno (ASA)" url="https://journals.lww.com/anesthesiology/fulltext/2023/02000/2023_american_society_of_anesthesiologists.8.aspx" icon="⏱️" />
+                        </div>
+                    </section>
+
+                    <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-medical-teal/30 dark:border-teal-900/50 overflow-hidden">
+                        <div className="bg-teal-50 dark:bg-teal-900/20 px-4 py-2.5 border-b border-teal-100 dark:border-teal-900/30">
+                            <h2 className="text-xs font-bold text-teal-700 dark:text-teal-400 uppercase tracking-wider">Fórmulas Principales</h2>
+                        </div>
+                        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                            <FormulaRow title="Fluidos Basales (Holliday-Segar)" content="&le; 10 kg: 4 mL/kg/h<br/>10 a 20 kg: 40 + 2 mL/kg/h<br/>> 20 kg: 60 + 1 mL/kg/h (Máx 100 mL/h)" />
+                            <FormulaRow title="Volumen Sanguíneo (mL/kg)" content="Neonato: 85 | Lactante: 80 | Preescolar: 75<br/>Escolar: 70 | Adolescente: 65" />
+                            <FormulaRow title="Tubo Endotraqueal (DI)" content="Sin globo: (Edad / 4) + 4<br/>Con globo: (Edad / 4) + 3.5<br/>Profundidad Oral: DI &times; 3" />
+                            <FormulaRow title="Resucitación PALS" content="Adrenalina IV/IO: 0.01 mg/kg<br/>Desfibrilación: 1ra 2 J/kg, 2da 4 J/kg<br/>Cardioversión: 0.5 a 1 J/kg" />
+                            <FormulaRow title="Anestésicos Locales (Dosis Máx)" content="Lidocaína simple: 5 mg/kg (Máx 300 mg)<br/>Lidocaína c/ Epi: 7 mg/kg (Máx 500 mg)<br/>Bupivacaína simple: 2.5 mg/kg (Máx 175 mg)" />
+                        </div>
+                    </section>
+
+                    <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden p-4 mt-6">
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 text-justify leading-relaxed">
+                            <strong className="font-bold text-gray-700 dark:text-gray-300">Aviso Legal:</strong> La información proporcionada por esta calculadora es únicamente para fines de estimación y referencia. El usuario debe ejercer juicio profesional independiente y verificar todos los cálculos conforme a las políticas institucionales, guías clínicas y normativas aplicables. No se ofrecen garantías, expresas o implícitas, sobre la exactitud o integridad de la información. Los desarrolladores y distribuidores no asumen responsabilidad alguna por daños derivados del uso o imposibilidad de uso de esta aplicación.
+                        </p>
+                    </section>
+
+                    <div className="text-center mt-8 mb-4">
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 font-medium tracking-wide">
+                            Desarrollado por Dr. Christian Dimas García
+                        </p>
+                    </div>
+                </div>
+            );
+        };
+
+        // ============================================================================
+        // 4. APLICACIÓN PRINCIPAL
+        // ============================================================================
+
+        const App = () => {
+            // Única modificación al estado inicial para que abra en 'vitals'
+            const [activeTab, setActiveTab] = useState('vitals');
+            
+            const [patient, setPatient] = useState({
+                weightKg: 15,
+                heightCm: 100,
+                ageValue: 3,
+                ageUnit: 'Y',
+                ageYears: 3,
+                sex: 'M',
+                category: 'preschool'
+            });
+
+            const getCategoryFromAbsoluteAge = (val, unit) => {
+                let days = 0;
+                if (unit === 'Y') days = val * 365.25;
+                else if (unit === 'M') days = val * 30.44;
+                else if (unit === 'D') days = val;
+
+                if (days <= 28) return 'neonate';
+                if (days <= 365) return 'infant';
+                if (days <= 365 * 5) return 'preschool';
+                if (days <= 365 * 12) return 'school';
+                return 'adolescent';
+            };
+
+            const updatePatient = (field, value) => {
+                setPatient(prev => {
+                    const next = { ...prev, [field]: value };
+                    if (field === 'ageValue' || field === 'ageUnit') {
+                        const newVal = field === 'ageValue' ? value : prev.ageValue;
+                        const newUnit = field === 'ageUnit' ? value : prev.ageUnit;
+                        let y = 0;
+                        if (newUnit === 'Y') y = newVal;
+                        else if (newUnit === 'M') y = newVal / 12;
+                        else if (newUnit === 'D') y = newVal / 365.25;
+                        next.ageYears = y;
+                        next.category = getCategoryFromAbsoluteAge(newVal, newUnit);
+                    }
+                    return next;
+                });
+            };
+
+            const cycleAgeUnit = () => {
+                const nextUnit = patient.ageUnit === 'Y' ? 'M' : patient.ageUnit === 'M' ? 'D' : 'Y';
+                updatePatient('ageUnit', nextUnit);
+            };
+
+            return (
+                <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
+                    <Header patient={patient} updatePatient={updatePatient} cycleAgeUnit={cycleAgeUnit} />
+                    
+                    <main className="flex-1 overflow-y-auto w-full h-full">
+                        {activeTab === 'vitals' && <VitalsView patient={patient} />}
+                        {activeTab === 'equipment' && <EquipmentView patient={patient} />}
+                        {activeTab === 'resus' && <ResusView patient={patient} />}
+                        {activeTab === 'locals' && <LocalsView patient={patient} />}
+                        {activeTab === 'algorithms' && <AlgorithmsView />}
+                        {activeTab === 'info' && <InfoView />}
+                    </main>
+
+                    <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then((registration) => {
+                        console.log('Service Worker registrado con éxito: ', registration.scope);
+                    })
+                    .catch((err) => {
+                        console.log('Fallo el registro del Service Worker: ', err);
+                    });
+            });
+        }
+    </script>
+</body>
+</html>
