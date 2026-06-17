@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pedicalc-offline-v1';
+const CACHE_NAME = 'pedicalc-offline-v2';
 
 // Recursos esenciales a guardar en caché
 const urlsToCache = [
