@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>PediCalc - Anestesia Pediátrica</title>
     
-    <!-- Etiquetas actualizadas para iOS y Android -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -13,7 +12,6 @@
     <meta name="theme-color" content="#f9fafb" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#111827" media="(prefers-color-scheme: dark)">
     
-    <!-- Solución al error 404 del Favicon -->
     <link rel="icon" href="./icon-192.png" type="image/png">
     <link rel="manifest" href="./manifest.json">
 
@@ -41,57 +39,23 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
-        :root {
-            --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
-        }
-        body {
-            -webkit-tap-highlight-color: transparent;
-            overscroll-behavior-y: none;
-        }
-        .pb-safe {
-            padding-bottom: calc(1rem + var(--safe-area-inset-bottom));
-        }
-        .tabular-nums {
-            font-variant-numeric: tabular-nums;
-        }
+        :root { --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px); }
+        body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+        .pb-safe { padding-bottom: calc(1rem + var(--safe-area-inset-bottom)); }
+        .tabular-nums { font-variant-numeric: tabular-nums; }
         input[type=number]::-webkit-inner-spin-button, 
-        input[type=number]::-webkit-outer-spin-button { 
-            -webkit-appearance: none; 
-            margin: 0; 
-        }
-        input[type=number] {
-            -moz-appearance: textfield;
-        }
-        .animate-fade-in {
-            animation: fadeIn 0.15s ease-out;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(4px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .glass-header {
-            background: rgba(255, 255, 255, 0.85);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-        }
-        @media (prefers-color-scheme: dark) {
-            .glass-header {
-                background: rgba(17, 24, 39, 0.85);
-            }
-        }
-        
-        /* Modal Animations for Algorithms */
-        @keyframes modalEnter {
-            from { opacity: 0; transform: scale(0.95) translateY(10px); }
-            to { opacity: 1; transform: scale(1) translateY(0); }
-        }
-        .modal-animate {
-            animation: modalEnter 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+        .animate-fade-in { animation: fadeIn 0.15s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        .glass-header { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+        @media (prefers-color-scheme: dark) { .glass-header { background: rgba(17, 24, 39, 0.85); } }
+        @keyframes modalEnter { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .modal-animate { animation: modalEnter 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     </style>
 
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 antialiased h-screen overflow-hidden">
@@ -99,6 +63,7 @@
     <div id="root" class="h-full"></div>
 
     <script type="text/babel" data-presets="react">
+
         const { useState, useMemo } = React;
 
         // ============================================================================
