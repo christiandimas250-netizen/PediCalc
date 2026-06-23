@@ -1,18 +1,17 @@
-const CACHE_NAME = 'pedicalc-offline-v2';
+// Aumentamos la versión para forzar la actualización en los dispositivos
+const CACHE_NAME = 'pedicalc-offline-v4';
 
-// Recursos esenciales a guardar en caché
 const urlsToCache = [
-  './',
+  '.',
   './index.html',
   './manifest.json',
-  // Es crítico hacer caché de los CDNs para que funcione 100% offline
-  'https://cdn.tailwindcss.com',
+  // Los CDN de unpkg SÍ soportan CORS, así que los dejamos en la instalación inicial.
+  // Tailwind fue removido de aquí para evitar que crashee la instalación.
   'https://unpkg.com/react@18/umd/react.production.min.js',
   'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
   'https://unpkg.com/@babel/standalone/babel.min.js'
 ];
 
-// Instalación: Guarda todo en caché la primera vez
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -23,24 +22,21 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Interceptar peticiones (Fetch): Busca primero en caché, si no está, va a internet
 self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
-        // Si el recurso está en la caché, devuélvelo
         if (response) {
           return response;
         }
-        // Si no está, búscalo en la red
         return fetch(event.request).then(
           (networkResponse) => {
-            // Verificar si recibimos una respuesta válida
-            if(!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic' && networkResponse.type !== 'cors') {
+            // SOLUCIÓN CORS: Permitimos respuestas 'opaque' (status 0) para que 
+            // el CDN de Tailwind pueda ser guardado en caché dinámicamente sin fallar.
+            if(!networkResponse || (networkResponse.status !== 200 && networkResponse.status !== 0) || (networkResponse.type !== 'basic' && networkResponse.type !== 'cors' && networkResponse.type !== 'opaque')) {
               return networkResponse;
             }
 
-            // Clonar la respuesta de red para guardarla en la caché y devolverla
             var responseToCache = networkResponse.clone();
             caches.open(CACHE_NAME)
               .then((cache) => {
@@ -49,12 +45,13 @@ self.addEventListener('fetch', (event) => {
 
             return networkResponse;
           }
-        );
+        ).catch((error) => {
+          console.error('Fallo la red y no se encontró recurso en caché:', event.request.url);
+        });
       })
   );
 });
 
-// Activación: Limpia cachés viejas si cambias la versión
 self.addEventListener('activate', (event) => {
   const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
