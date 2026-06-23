@@ -39,19 +39,53 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
-        :root { --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px); }
-        body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
-        .pb-safe { padding-bottom: calc(1rem + var(--safe-area-inset-bottom)); }
-        .tabular-nums { font-variant-numeric: tabular-nums; }
+        :root {
+            --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        body {
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior-y: none;
+        }
+        .pb-safe {
+            padding-bottom: calc(1rem + var(--safe-area-inset-bottom));
+        }
+        .tabular-nums {
+            font-variant-numeric: tabular-nums;
+        }
         input[type=number]::-webkit-inner-spin-button, 
-        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        input[type=number] { -moz-appearance: textfield; }
-        .animate-fade-in { animation: fadeIn 0.15s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-        .glass-header { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
-        @media (prefers-color-scheme: dark) { .glass-header { background: rgba(17, 24, 39, 0.85); } }
-        @keyframes modalEnter { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-        .modal-animate { animation: modalEnter 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.15s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .glass-header {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        @media (prefers-color-scheme: dark) {
+            .glass-header {
+                background: rgba(17, 24, 39, 0.85);
+            }
+        }
+        
+        /* Modal Animations for Algorithms */
+        @keyframes modalEnter {
+            from { opacity: 0; transform: scale(0.95) translateY(10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .modal-animate {
+            animation: modalEnter 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
     </style>
 
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -62,7 +96,9 @@
     
     <div id="root" class="h-full"></div>
 
-    <script type="text/babel" data-plugins="transform-react-jsx">
+    <script type="text/babel" data-presets="react">
+        /** @jsx React.createElement */
+        /** @jsxFrag React.Fragment */
 
         const { useState, useMemo } = React;
 
