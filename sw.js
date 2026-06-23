@@ -1,24 +1,26 @@
-const CACHE_NAME = 'pedicalc-offline-v5';
+const CACHE_NAME = 'pedicalc-offline-v6';
 
-// Solo guardamos archivos locales en la instalación inicial para evitar bloqueos CORS
 const urlsToCache = [
   './',
   './index.html',
-  './manifest.json'
+  './manifest.json',
+  'https://unpkg.com/react@18/umd/react.production.min.js',
+  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
+  'https://unpkg.com/@babel/standalone/babel.min.js'
 ];
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); // Fuerza la instalación inmediata
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
+        console.log('Cache abierta');
         return cache.addAll(urlsToCache);
       })
   );
 });
 
 self.addEventListener('fetch', (event) => {
-  // Ignorar peticiones que no sean GET (como extensiones de Chrome)
   if (event.request.method !== 'GET') return;
 
   event.respondWith(
@@ -29,7 +31,6 @@ self.addEventListener('fetch', (event) => {
         }
         return fetch(event.request).then(
           (networkResponse) => {
-            // Permitimos respuestas opacas (status 0) de CDNs para guardarlas sin error
             if (!networkResponse || (networkResponse.status !== 200 && networkResponse.status !== 0)) {
               return networkResponse;
             }
@@ -42,23 +43,24 @@ self.addEventListener('fetch', (event) => {
 
             return networkResponse;
           }
-        ).catch(() => {
-          console.log('Modo offline: No se pudo obtener el recurso', event.request.url);
+        ).catch((error) => {
+          console.error('Fallo la red y no se encontró recurso en caché:', event.request.url);
         });
       })
   );
 });
 
 self.addEventListener('activate', (event) => {
+  const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
+          if (cacheWhitelist.indexOf(cacheName) === -1) {
             return caches.delete(cacheName);
           }
         })
       );
-    }).then(() => self.clients.claim()) // Fuerza a la PWA a usar el nuevo SW de inmediato
+    }).then(() => self.clients.claim())
   );
 });
