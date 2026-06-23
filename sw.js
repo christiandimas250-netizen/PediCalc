@@ -1,28 +1,26 @@
-// Aumentamos la versión para forzar la actualización en los dispositivos
-const CACHE_NAME = 'pedicalc-offline-v4';
+const CACHE_NAME = 'pedicalc-offline-v5';
 
+// Solo guardamos archivos locales en la instalación inicial para evitar bloqueos CORS
 const urlsToCache = [
-  '.',
+  './',
   './index.html',
-  './manifest.json',
-  // Los CDN de unpkg SÍ soportan CORS, así que los dejamos en la instalación inicial.
-  // Tailwind fue removido de aquí para evitar que crashee la instalación.
-  'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://unpkg.com/@babel/standalone/babel.min.js'
+  './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting(); // Fuerza la instalación inmediata
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('Cache abierta');
         return cache.addAll(urlsToCache);
       })
   );
 });
 
 self.addEventListener('fetch', (event) => {
+  // Ignorar peticiones que no sean GET (como extensiones de Chrome)
+  if (event.request.method !== 'GET') return;
+
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
@@ -31,9 +29,8 @@ self.addEventListener('fetch', (event) => {
         }
         return fetch(event.request).then(
           (networkResponse) => {
-            // SOLUCIÓN CORS: Permitimos respuestas 'opaque' (status 0) para que 
-            // el CDN de Tailwind pueda ser guardado en caché dinámicamente sin fallar.
-            if(!networkResponse || (networkResponse.status !== 200 && networkResponse.status !== 0) || (networkResponse.type !== 'basic' && networkResponse.type !== 'cors' && networkResponse.type !== 'opaque')) {
+            // Permitimos respuestas opacas (status 0) de CDNs para guardarlas sin error
+            if (!networkResponse || (networkResponse.status !== 200 && networkResponse.status !== 0)) {
               return networkResponse;
             }
 
@@ -45,24 +42,23 @@ self.addEventListener('fetch', (event) => {
 
             return networkResponse;
           }
-        ).catch((error) => {
-          console.error('Fallo la red y no se encontró recurso en caché:', event.request.url);
+        ).catch(() => {
+          console.log('Modo offline: No se pudo obtener el recurso', event.request.url);
         });
       })
   );
 });
 
 self.addEventListener('activate', (event) => {
-  const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheWhitelist.indexOf(cacheName) === -1) {
+          if (cacheName !== CACHE_NAME) {
             return caches.delete(cacheName);
           }
         })
       );
-    })
+    }).then(() => self.clients.claim()) // Fuerza a la PWA a usar el nuevo SW de inmediato
   );
 });
