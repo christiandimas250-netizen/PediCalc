@@ -1,14 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
-<head><!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-EJXYG0MHZ7"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'G-EJXYG0MHZ7');
-</script>
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>PediCalc - Anestesia Pediátrica</title>
@@ -21,7 +13,6 @@
     
     <link rel="manifest" href="./manifest.json">
 
-    <!-- SOLUCIÓN 1: La configuración de Tailwind va ANTES del script -->
     <script>
         tailwind.config = {
             darkMode: 'media',
@@ -103,7 +94,6 @@
     
     <div id="root" class="h-full"></div>
 
-    <!-- SOLUCIÓN 4: Removido el preset 'typescript' para evitar error de Babel -->
     <script type="text/babel" data-presets="react">
         const { useState, useMemo } = React;
 
