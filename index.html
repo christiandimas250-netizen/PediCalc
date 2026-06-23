@@ -21,7 +21,7 @@
     
     <link rel="manifest" href="./manifest.json">
 
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SOLUCIÓN 1: La configuración de Tailwind va ANTES del script -->
     <script>
         tailwind.config = {
             darkMode: 'media',
@@ -43,6 +43,7 @@
             }
         }
     </script>
+    <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
         :root {
@@ -102,7 +103,8 @@
     
     <div id="root" class="h-full"></div>
 
-    <script type="text/babel" data-presets="react,typescript">
+    <!-- SOLUCIÓN 4: Removido el preset 'typescript' para evitar error de Babel -->
+    <script type="text/babel" data-presets="react">
         const { useState, useMemo } = React;
 
         // ============================================================================
@@ -426,7 +428,6 @@
             const uncuffedNum = calculateUncuffedETTube(patient);
             const uncuffed = formatNumber(uncuffedNum);
             
-            // Lógica ajustada para dejar en blanco (sin globo) si es menor a 1 año
             const cuffed = patient.ageYears < 1 ? '-' : formatNumber(calculateCuffedETTube(patient));
             
             const oralDepth = c === 'neonate' ? (w + 6).toFixed(1) : (uncuffedNum * 3).toFixed(1);
@@ -796,7 +797,6 @@
         // ============================================================================
 
         const App = () => {
-            // Única modificación al estado inicial para que abra en 'vitals'
             const [activeTab, setActiveTab] = useState('vitals');
             
             const [patient, setPatient] = useState({
